@@ -1,0 +1,1 @@
+{"name":"packing-list-generator","version":"0.2.0","description":"根据目的地天气、行程天数、出行类型和人员构成，生成个性化可勾选行李清单 HTML，同时支持打印、图片保持和文本复制。包含分类清单、按天穿搭建议和临走前待办，支持国内/国际出行与多城市行程。","publishConfig":{"registry":"https://contextlab.alibaba-inc.com/skill"}}
