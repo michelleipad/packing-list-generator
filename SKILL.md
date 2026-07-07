@@ -2,6 +2,9 @@
 name: packing-list-generator
 description: 行李清单生成器。当用户提到行李清单、打包清单、旅行清单、出差准备、packing list，或描述"去某地几天要带什么 / 出门带什么 / 帮我打包"等出行物品询问时，务必使用本 skill——即便用户没有明确说"生成清单"也要触发。根据目的地天气、行程天数、出行类型和人员构成，生成个性化可勾选行李清单 HTML，含分类清单、按天穿搭建议、临走前待办，支持打印、保存图片、文本复制；覆盖国内/国际出行与多城市行程。负向场景（采购、装修、备货、婚礼、月子）不触发。
 version: 0.4.0
+author:
+  empId: "76234"
+  nickname: "晓妖"
 allowed-tools: Read, AskUserQuestion, WebSearch
 metadata:
   dependencies:
