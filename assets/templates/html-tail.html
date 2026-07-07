@@ -1,0 +1,642 @@
+</div>
+
+<script>
+  const TRIP_KEY = (function() {
+    var el = document.querySelector('[data-trip-id]');
+    if (el && el.dataset.tripId) return 'packing_' + el.dataset.tripId;
+    return 'packing_' + btoa(encodeURIComponent(document.querySelector('h1').textContent)).slice(0, 20);
+  })();
+  let currentFilter = 'all';
+
+  function initCheckboxes() {
+    applyDeletedCategories();
+    injectCategoryDeleteButtons();
+    setupAddItemRows();
+    applyDeletedItems();
+    restoreCustomItems();
+    injectDefaultDeleteButtons();
+    const saved = JSON.parse(localStorage.getItem(TRIP_KEY) || '{}');
+    document.querySelectorAll('.item input[type="checkbox"]').forEach(cb => {
+      if (saved[cb.id]) {
+        cb.checked = true;
+        cb.closest('.item').classList.add('checked');
+      }
+      bindCheckbox(cb);
+    });
+    updateProgress();
+    updateFilterCounts();
+  }
+
+  function bindCheckbox(cb) {
+    cb.addEventListener('change', () => {
+      cb.closest('.item').classList.toggle('checked', cb.checked);
+      saveProgress();
+      saveCustomItems();
+      updateProgress();
+      applyFilter();
+    });
+  }
+
+  // 读取已删除的默认 item id 列表，从 DOM 中移除
+  function applyDeletedItems() {
+    const deleted = JSON.parse(localStorage.getItem(TRIP_KEY + '_deleted') || '[]');
+    if (!deleted.length) return;
+    deleted.forEach(id => {
+      const cb = document.getElementById(id);
+      if (cb) cb.closest('.item').remove();
+    });
+  }
+
+  // 卡片稳定 key：用 header 纯文本（去 emoji/空白）生成，重开页面仍能匹配
+  function getCategoryKey(card) {
+    const header = card.querySelector('.category-header');
+    if (!header) return '';
+    // 复制一份 header，去掉图标和删除按钮，只留分类名文本
+    const clone = header.cloneNode(true);
+    clone.querySelectorAll('.icon, .cat-delete-btn').forEach(el => el.remove());
+    return clone.textContent.trim();
+  }
+
+  // 从 DOM 移除已被永久删除的分类卡片
+  function applyDeletedCategories() {
+    const deleted = JSON.parse(localStorage.getItem(TRIP_KEY + '_deleted_cats') || '[]');
+    if (!deleted.length) return;
+    document.querySelectorAll('.category-card').forEach(card => {
+      const key = getCategoryKey(card);
+      if (deleted.includes(key)) card.remove();
+    });
+  }
+
+  // 给每张剩余的 category-header 注入 × 删除按钮
+  function injectCategoryDeleteButtons() {
+    document.querySelectorAll('.category-card').forEach(card => {
+      const header = card.querySelector('.category-header');
+      if (!header || header.querySelector('.cat-delete-btn')) return;
+      const btn = document.createElement('button');
+      btn.className = 'cat-delete-btn';
+      btn.title = '删除整个分类';
+      btn.textContent = '×';
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        deleteCategory(card);
+      });
+      header.appendChild(btn);
+    });
+  }
+
+  function deleteCategory(card) {
+    const key = getCategoryKey(card);
+    if (!key) { card.remove(); updateProgress(); updateFilterCounts(); return; }
+    const name = key;
+    if (!confirm('删除分类「' + name + '」？此卡内所有物品会一起消失。可通过「重置进度」恢复。')) return;
+
+    // 持久化删除记录
+    const deleted = JSON.parse(localStorage.getItem(TRIP_KEY + '_deleted_cats') || '[]');
+    if (!deleted.includes(key)) deleted.push(key);
+    localStorage.setItem(TRIP_KEY + '_deleted_cats', JSON.stringify(deleted));
+
+    // 清理本卡内 item 的勾选状态
+    const saved = JSON.parse(localStorage.getItem(TRIP_KEY) || '{}');
+    card.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      if (saved[cb.id]) delete saved[cb.id];
+    });
+    localStorage.setItem(TRIP_KEY, JSON.stringify(saved));
+
+    // 注：本卡内的自定义 item 记录不在此处单独清理——因分类卡片索引（data-cat）
+    // 在下次加载时会因缺失本卡而错位；统一由「重置进度」按钮清除 _custom 恢复。
+
+    card.remove();
+    updateProgress();
+    updateFilterCounts();
+    applyFilter();
+  }
+
+  // 给所有默认 item（不带 .delete-btn 的）注入 hover 删除按钮
+  function injectDefaultDeleteButtons() {
+    document.querySelectorAll('.item').forEach(item => {
+      if (item.querySelector('.delete-btn')) return;
+      const cb = item.querySelector('input[type="checkbox"]');
+      if (!cb) return;
+      const btn = document.createElement('button');
+      btn.className = 'delete-btn';
+      btn.title = '删除此物品';
+      btn.textContent = '×';
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        deleteDefaultItem(cb.id, item);
+      });
+      item.appendChild(btn);
+    });
+  }
+
+  function deleteDefaultItem(id, itemEl) {
+    const deleted = JSON.parse(localStorage.getItem(TRIP_KEY + '_deleted') || '[]');
+    if (!deleted.includes(id)) deleted.push(id);
+    localStorage.setItem(TRIP_KEY + '_deleted', JSON.stringify(deleted));
+    // 同时从勾选状态中清除
+    const saved = JSON.parse(localStorage.getItem(TRIP_KEY) || '{}');
+    if (saved[id]) {
+      delete saved[id];
+      localStorage.setItem(TRIP_KEY, JSON.stringify(saved));
+    }
+    itemEl.remove();
+    updateProgress();
+    updateFilterCounts();
+    applyFilter();
+  }
+
+  function saveProgress() {
+    const state = {};
+    document.querySelectorAll('.item input[type="checkbox"]').forEach(cb => {
+      if (cb.checked) state[cb.id] = true;
+    });
+    localStorage.setItem(TRIP_KEY, JSON.stringify(state));
+  }
+
+  function updateProgress() {
+    const total = document.querySelectorAll('.item input[type="checkbox"]').length;
+    const checked = document.querySelectorAll('.item input[type="checkbox"]:checked').length;
+    const percent = total > 0 ? Math.round((checked / total) * 100) : 0;
+    document.querySelector('.progress-fill').style.width = percent + '%';
+    document.getElementById('progress-label').textContent = checked + ' / ' + total + ' 已打包';
+    document.getElementById('progress-percent').textContent = percent + '%';
+  }
+
+  function updateFilterCounts() {
+    const total = document.querySelectorAll('.item input[type="checkbox"]').length;
+    const checked = document.querySelectorAll('.item input[type="checkbox"]:checked').length;
+    const unpacked = total - checked;
+    document.getElementById('count-all').textContent = total ? ' ' + total : '';
+    document.getElementById('count-packed').textContent = checked ? ' ' + checked : '';
+    document.getElementById('count-unpacked').textContent = unpacked ? ' ' + unpacked : '';
+  }
+
+  function setFilter(filter) {
+    currentFilter = filter;
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.filter === filter);
+    });
+    applyFilter();
+  }
+
+  function applyFilter() {
+    const cards = document.querySelectorAll('.category-card');
+
+    cards.forEach(card => {
+      const items = card.querySelectorAll('.item');
+      let visibleInCard = 0;
+
+      items.forEach(item => {
+        const cb = item.querySelector('input[type="checkbox"]');
+        if (!cb) return;
+
+        let show = true;
+        if (currentFilter === 'packed') {
+          show = cb.checked;
+        } else if (currentFilter === 'unpacked') {
+          show = !cb.checked;
+        }
+
+        item.classList.toggle('hidden-by-filter', !show);
+        if (show) visibleInCard++;
+      });
+
+      const totalInCard = items.length;
+      const hasAddRow = card.querySelector('.add-item-row');
+      card.classList.toggle('hidden-by-filter', visibleInCard === 0 && totalInCard > 0 && !hasAddRow);
+    });
+
+    updateFilterCounts();
+  }
+
+  function resetProgress() {
+    if (confirm('确定要重置吗？将清空打包进度、自定义物品、已删除的默认物品、已删除的分类。')) {
+      localStorage.removeItem(TRIP_KEY);
+      localStorage.removeItem(TRIP_KEY + '_custom');
+      localStorage.removeItem(TRIP_KEY + '_deleted');
+      localStorage.removeItem(TRIP_KEY + '_deleted_cats');
+      location.reload();
+    }
+  }
+
+  function copyAsText() {
+    const btn = document.querySelector('.btn-secondary[onclick*="copyAsText"]');
+    const originalText = btn.textContent;
+    btn.textContent = '⏳ 复制中…';
+    btn.disabled = true;
+
+    let text = '';
+
+    // 标题
+    const title = document.querySelector('.header h1');
+    if (title) text += title.textContent.trim() + '\n';
+
+    // 标签信息
+    const tags = document.querySelectorAll('.trip-summary .tag');
+    if (tags.length) {
+      text += Array.from(tags).map(t => t.textContent.trim()).join(' · ') + '\n';
+    }
+    text += '\n';
+
+    // 各分类清单
+    document.querySelectorAll('.category-card').forEach(card => {
+      const header = card.querySelector('.category-header');
+      let categoryName = '未命名分类';
+      if (header) {
+        const iconSpan = header.querySelector('.icon');
+        const textSpan = header.querySelector('span:not(.icon)');
+        const icon = iconSpan ? iconSpan.textContent.trim() : '';
+        const name = textSpan ? textSpan.textContent.trim() : '';
+        categoryName = (icon + ' ' + name).trim();
+      }
+      text += '【' + categoryName + '】\n';
+
+      card.querySelectorAll('.item').forEach(item => {
+        const cb = item.querySelector('input[type="checkbox"]');
+        const label = item.querySelector('label');
+        if (!label) return;
+        const itemName = label.textContent.trim();
+        const isChecked = cb ? cb.checked : false;
+        const mark = isChecked ? '☑' : '☐';
+        text += '  ' + mark + ' ' + itemName + '\n';
+      });
+      text += '\n';
+    });
+
+    // 每日穿搭
+    const dailyOutfit = document.querySelector('.daily-outfit');
+    if (dailyOutfit) {
+      text += '【每日穿搭建议】\n';
+      dailyOutfit.querySelectorAll('.day-row').forEach(row => {
+        const dayLabel = row.querySelector('.day-label');
+        const outfitText = row.querySelector('.day-outfit');
+        if (dayLabel && outfitText) {
+          text += '  ' + dayLabel.textContent.trim() + '：' + outfitText.textContent.trim() + '\n';
+        }
+      });
+      text += '\n';
+    }
+
+    // 紧急联系/提醒
+    const infoCard = document.querySelector('.info-card');
+    if (infoCard) {
+      const infoTitle = infoCard.querySelector('h2');
+      text += '【' + (infoTitle ? infoTitle.textContent.trim() : '紧急联系信息') + '】\n';
+      infoCard.querySelectorAll('.info-row').forEach(item => {
+        const label = item.querySelector('.info-label');
+        const value = item.querySelector('.info-value');
+        if (label && value) {
+          text += '  ' + label.textContent.trim() + '：' + value.textContent.trim() + '\n';
+        }
+      });
+    }
+
+    // 复制到剪贴板
+    navigator.clipboard.writeText(text).then(function() {
+      btn.textContent = '✓ 已复制';
+      setTimeout(function() {
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }, 2000);
+    }).catch(function(err) {
+      // 降级方案：使用 textarea
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand('copy');
+        btn.textContent = '✓ 已复制';
+        setTimeout(function() {
+          btn.textContent = originalText;
+          btn.disabled = false;
+        }, 2000);
+      } catch (e) {
+        btn.textContent = originalText;
+        btn.disabled = false;
+        alert('复制失败，请手动复制');
+      }
+      document.body.removeChild(textarea);
+    });
+  }
+
+  function exportAsImage() {
+    const btn = document.querySelector('.btn-secondary[onclick*="exportAsImage"]');
+    const originalText = btn.textContent;
+    btn.textContent = '⏳ 生成中…';
+    btn.disabled = true;
+
+    // 尝试动态加载 html2canvas（内联 fallback：若 CDN 不可用则降级为文本复制）
+    if (typeof html2canvas === 'undefined') {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+      script.onload = function() { doExportAsImage(btn, originalText); };
+      script.onerror = function() {
+        btn.textContent = originalText;
+        btn.disabled = false;
+        // 降级方案：调用复制文本功能
+        alert('图片生成库加载失败（需要网络连接）。已自动切换为「复制文本」模式。');
+        copyAsText();
+      };
+      document.head.appendChild(script);
+    } else {
+      doExportAsImage(btn, originalText);
+    }
+  }
+
+  function doExportAsImage(btn, originalText) {
+    // 创建移动端布局容器
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'position:fixed;left:-9999px;top:0;width:375px;background:#F4F4F4;z-index:-1;overflow:visible;';
+
+    // 克隆页面内容（排除操作栏）
+    const container = document.querySelector('.container');
+    const clone = container.cloneNode(true);
+
+    // 移除操作栏、进度条和添加物品输入框
+    const actionBar = clone.querySelector('.action-bar');
+    if (actionBar) actionBar.remove();
+    const progressSection = clone.querySelector('.progress-section');
+    if (progressSection) progressSection.remove();
+    clone.querySelectorAll('.add-item-row').forEach(el => el.remove());
+
+    // 用自定义元素替代原生 checkbox（html2canvas 无法正确渲染原生 checkbox）
+    clone.querySelectorAll('.item').forEach(item => {
+      const cb = item.querySelector('input[type="checkbox"]');
+      if (!cb) return;
+      const originalCb = document.getElementById(cb.id);
+      const isChecked = originalCb ? originalCb.checked : cb.checked;
+
+      // 创建自定义 checkbox 视觉元素
+      const customCb = document.createElement('span');
+      customCb.className = 'custom-checkbox' + (isChecked ? ' checked' : '');
+      customCb.innerHTML = isChecked ? '✓' : '';
+
+      // 替换原生 checkbox
+      cb.replaceWith(customCb);
+
+      // 同步 .checked 类名到父元素（用于文字删除线样式）
+      if (isChecked) {
+        item.classList.add('checked');
+      } else {
+        item.classList.remove('checked');
+      }
+    });
+
+    // 强制移动端单列布局（覆盖所有区块，防止导出图片排版异常）
+    const style = document.createElement('style');
+    style.textContent = `
+      body { padding: 0 !important; background: #F4F4F4 !important; }
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      .container { max-width: 375px !important; padding: 8px !important; margin: 0 !important; }
+      .header { padding: 16px !important; margin-bottom: 12px !important; border-radius: 16px !important; }
+      .header h1 { font-size: 18px !important; }
+      .trip-summary { gap: 6px !important; margin-bottom: 0 !important; }
+      .trip-summary .tag { font-size: 11px !important; padding: 3px 8px !important; }
+      .categories-grid { grid-template-columns: 1fr !important; gap: 12px !important; margin-bottom: 12px !important; }
+      .category-card { border-radius: 16px !important; margin-bottom: 0 !important; }
+      .category-header { padding: 12px 14px !important; font-size: 14px !important; }
+      .category-items { padding: 4px 0 !important; }
+      .item { font-size: 13px !important; padding: 8px 14px !important; }
+      .item label { font-size: 13px !important; }
+      .item .note { font-size: 10px !important; padding: 1px 6px !important; }
+      .pre-departure { padding: 16px !important; margin-bottom: 12px !important; border-radius: 16px !important; }
+      .pre-departure h2 { font-size: 15px !important; margin-bottom: 12px !important; }
+      .pre-departure-items { padding: 4px 0 !important; }
+      .daily-outfit { padding: 16px !important; margin-bottom: 12px !important; border-radius: 16px !important; }
+      .daily-outfit h2 { font-size: 15px !important; margin-bottom: 12px !important; }
+      .daily-outfit p { font-size: 11px !important; margin-bottom: 10px !important; }
+      .city-divider { padding: 10px 14px 4px !important; font-size: 12px !important; margin-top: 2px !important; }
+      .day-row {
+        padding: 10px 12px !important; margin-bottom: 6px !important; border-radius: 10px !important;
+        flex-direction: column !important; align-items: flex-start !important; gap: 2px !important;
+      }
+      .day-label { font-size: 13px !important; }
+      .day-weather { font-size: 12px !important; }
+      .day-outfit { font-size: 12px !important; min-width: 0 !important; width: 100% !important; }
+      .info-card { padding: 16px !important; margin-bottom: 12px !important; border-radius: 16px !important; }
+      .info-card h2 { font-size: 15px !important; margin-bottom: 10px !important; }
+      .info-row { padding: 8px 0 !important; font-size: 12px !important; flex-direction: row !important; gap: 8px !important; }
+      .info-label { font-size: 12px !important; flex: 0 0 auto !important; max-width: 45% !important; }
+      .info-value { font-size: 12px !important; text-align: right !important; flex: 1 !important; }
+      .delete-btn { display: none !important; }
+      .cat-delete-btn { display: none !important; }
+      /* 自定义 checkbox 样式（替代原生 checkbox，确保 html2canvas 正确渲染） */
+      .custom-checkbox {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 18px !important;
+        height: 18px !important;
+        min-width: 18px !important;
+        border: 2px solid #D0D0D0 !important;
+        border-radius: 3px !important;
+        background: white !important;
+        margin-right: 10px !important;
+        font-size: 13px !important;
+        font-weight: bold !important;
+        color: transparent !important;
+        flex-shrink: 0 !important;
+      }
+      .custom-checkbox.checked {
+        background: #FFE600 !important;
+        border-color: #FFE600 !important;
+        color: #0F0F0F !important;
+      }
+    `;
+    clone.insertBefore(style, clone.firstChild);
+
+    wrapper.appendChild(clone);
+    document.body.appendChild(wrapper);
+
+    // 等待渲染稳定（500ms 确保样式充分应用）
+    setTimeout(function() {
+      const fullHeight = wrapper.scrollHeight;
+      // 长清单高度告警：canvas 高度上限约 16384px，超出会被浏览器截断
+      if (fullHeight * 2 > 16384) {
+        var proceed = confirm('清单较长（导出高度 ' + fullHeight + 'px），保存为图片可能被浏览器截断。\n\n建议改用「打印」保存为 PDF。\n\n仍继续导出图片？');
+        if (!proceed) {
+          document.body.removeChild(wrapper);
+          btn.textContent = originalText;
+          btn.disabled = false;
+          return;
+        }
+      }
+      html2canvas(wrapper, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#F4F4F4',
+        logging: false,
+        width: 375,
+        windowWidth: 375,
+        scrollY: 0,
+        height: fullHeight
+      }).then(function(canvas) {
+        document.body.removeChild(wrapper);
+        canvas.toBlob(function(blob) {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          var rawTitle = (document.querySelector('h1') || {}).textContent || '行李清单';
+          // 文件名 sanitize：替换浏览器/文件系统不允许的字符
+          var safeName = rawTitle.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, '_').replace(/[\r\n\t]/g, '').slice(0, 80).trim() || '行李清单';
+          a.download = safeName + '.png';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          btn.textContent = originalText;
+          btn.disabled = false;
+        }, 'image/png');
+      }).catch(function(err) {
+        document.body.removeChild(wrapper);
+        btn.textContent = originalText;
+        btn.disabled = false;
+        alert('生成图片失败：' + err.message);
+      });
+    }, 500);
+  }
+
+  // === Add Item Feature ===
+
+  function setupAddItemRows() {
+    document.querySelectorAll('.category-card').forEach((card, idx) => {
+      card.setAttribute('data-cat', idx);
+      const itemsContainer = card.querySelector('.category-items');
+      if (!itemsContainer || itemsContainer.querySelector('.add-item-row')) return;
+
+      const row = document.createElement('div');
+      row.className = 'add-item-row';
+      row.innerHTML = '<input type="text" placeholder="添加自定义物品…">' +
+        '<button class="add-btn" title="添加">+</button>';
+      itemsContainer.appendChild(row);
+
+      const input = row.querySelector('input');
+      const btn = row.querySelector('button');
+      btn.addEventListener('click', () => handleAddItem(card, input));
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') handleAddItem(card, input);
+      });
+    });
+    // Also setup for pre-departure
+    const preDeparture = document.querySelector('.pre-departure-items');
+    if (preDeparture && !preDeparture.querySelector('.add-item-row')) {
+      const row = document.createElement('div');
+      row.className = 'add-item-row';
+      row.innerHTML = '<input type="text" placeholder="添加自定义待办…">' +
+        '<button class="add-btn" title="添加">+</button>';
+      preDeparture.appendChild(row);
+      const input = row.querySelector('input');
+      const btn = row.querySelector('button');
+      btn.addEventListener('click', () => {
+        const text = input.value.trim();
+        if (!text) return;
+        const id = 'depart-custom-' + Date.now();
+        const el = createCustomItemForPreDeparture(id, text);
+        preDeparture.insertBefore(el, row);
+        input.value = '';
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          const text = input.value.trim();
+          if (!text) return;
+          const id = 'depart-custom-' + Date.now();
+          const el = createCustomItemForPreDeparture(id, text);
+          preDeparture.insertBefore(el, row);
+          input.value = '';
+        }
+      });
+    }
+  }
+
+  function createCustomItemForPreDeparture(id, text) {
+    const div = document.createElement('div');
+    div.className = 'item item--custom';
+    div.innerHTML = '<input type="checkbox" id="' + id + '">' +
+      '<label for="' + id + '">' + text.replace(/</g, '&lt;') + '</label>' +
+      '<button class="delete-btn" title="删除">×</button>';
+    const cb = div.querySelector('input[type="checkbox"]');
+    bindCheckbox(cb);
+    div.querySelector('.delete-btn').addEventListener('click', function(e) {
+      e.stopPropagation();
+      div.remove();
+      updateProgress();
+      updateFilterCounts();
+      applyFilter();
+    });
+    return div;
+  }
+
+  function handleAddItem(card, input) {
+    const text = input.value.trim();
+    if (!text) return;
+    const itemsContainer = card.querySelector('.category-items');
+    const addRow = itemsContainer.querySelector('.add-item-row');
+    const catIdx = card.getAttribute('data-cat');
+    const id = 'custom-' + catIdx + '-' + Date.now();
+    const el = createCustomItem(id, text);
+    itemsContainer.insertBefore(el, addRow);
+    bindCheckbox(el.querySelector('input[type="checkbox"]'));
+    input.value = '';
+    saveCustomItems();
+    updateProgress();
+    updateFilterCounts();
+    applyFilter();
+  }
+
+  function createCustomItem(id, text, checked) {
+    const div = document.createElement('div');
+    div.className = 'item item--custom' + (checked ? ' checked' : '');
+    div.innerHTML = '<input type="checkbox" id="' + id + '"' + (checked ? ' checked' : '') + '>' +
+      '<label for="' + id + '">' + text.replace(/</g, '&lt;') + '</label>' +
+      '<button class="delete-btn" title="删除此物品">×</button>';
+    div.querySelector('.delete-btn').addEventListener('click', function(e) {
+      e.stopPropagation();
+      div.remove();
+      saveCustomItems();
+      saveProgress();
+      updateProgress();
+      updateFilterCounts();
+      applyFilter();
+    });
+    return div;
+  }
+
+  function saveCustomItems() {
+    const data = {};
+    document.querySelectorAll('.category-card').forEach(card => {
+      const catIdx = card.getAttribute('data-cat');
+      const items = [];
+      card.querySelectorAll('.item.item--custom').forEach(item => {
+        const cb = item.querySelector('input[type="checkbox"]');
+        const label = item.querySelector('label');
+        if (cb && label) {
+          items.push({ id: cb.id, text: label.textContent, checked: cb.checked });
+        }
+      });
+      if (items.length > 0) data[catIdx] = items;
+    });
+    localStorage.setItem(TRIP_KEY + '_custom', JSON.stringify(data));
+  }
+
+  function restoreCustomItems() {
+    const data = JSON.parse(localStorage.getItem(TRIP_KEY + '_custom') || '{}');
+    const cards = document.querySelectorAll('.category-card');
+    Object.keys(data).forEach(catIdx => {
+      const card = cards[parseInt(catIdx)];
+      if (!card) return;
+      const itemsContainer = card.querySelector('.category-items');
+      const addRow = itemsContainer.querySelector('.add-item-row');
+      data[catIdx].forEach(ci => {
+        const el = createCustomItem(ci.id, ci.text, ci.checked);
+        itemsContainer.insertBefore(el, addRow);
+      });
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', initCheckboxes);
+</script>
+</body>
+</html>
