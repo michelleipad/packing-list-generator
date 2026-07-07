@@ -1,0 +1,79 @@
+<!--
+  packing-list-generator body 骨架
+  用途：AI 生成 body 内容时的硬契约结构参考。所有 class 名、id、data-attr、onclick 绑定被 html-head.html 的 CSS 和 html-tail.html 的 JS 双向依赖，禁止改名 / 换标签 / 丢 onclick / 用别名。
+  用法：照抄本文件结构，替换 {{...}} 为实际数据；按 approximate / approximate_days / 多城市等条件动态增删模块。
+  完整参考实例：assets/templates/html-template.html
+-->
+
+<div class="header" data-trip-id="{{UNIQUE_ID}}">
+  <h1>{{TITLE}}</h1>
+  <div class="trip-summary">
+    <span class="tag">📍 {{目的地}}</span>
+    <span class="tag">📅 {{日期段}}</span>
+    <span class="tag">⏱️ {{天数}}</span>
+    <span class="tag">{{交通 emoji?}} {{交通}}</span>
+    <span class="tag">{{出行类型 emoji?}} {{出行类型}}</span>
+  </div>
+  <!-- 仅 approximate=true 渲染 -->
+  <div class="approx-notice"><span class="approx-icon">📅</span>出发日未定，按 {{目的地}} {{月份}} 气候常态估算，建议出行前 3 天回看本清单</div>
+  <!-- 仅 approximate_days=true 渲染 -->
+  <div class="approx-days-notice"><span class="approx-icon">📅</span>行程天数未定，按 7 天估算衣物件数，请根据实际行程加减</div>
+</div>
+
+<div class="progress-section">
+  <strong>打包进度</strong>
+  <div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>
+  <div class="progress-text"><span class="progress-count" id="progress-label">0 / 0 已打包</span><span class="progress-percent" id="progress-percent">0%</span></div>
+</div>
+
+<div class="categories-grid">
+  <section class="category-card">
+    <div class="category-header"><span class="icon">{{emoji}}</span>{{分类名}}</div>
+    <div class="category-items">
+      <div class="item"><input type="checkbox" id="{{唯一id}}"><label for="{{唯一id}}">{{物品}} ×{{N}}</label><span class="note">{{备注}}<span class="item-approx-hint">按 7 天估算</span></span></div>
+      <!-- ... 更多 item -->
+    </div>
+  </section>
+  <!-- ... 更多 category-card -->
+</div>
+
+<section class="daily-outfit">
+  <h2>👚 穿搭建议</h2>
+  <!-- 精确模式：Day N (M/D) 逐日；approximate 或 approximate_days=true：前/后半程两段 -->
+  <div class="day-row">
+    <span class="day-label">{{Day N 或 前半程}}</span>
+    <span class="day-weather">{{温度}} · {{天气}}</span>
+    <span class="day-outfit">建议：{{穿搭}}</span>
+  </div>
+</section>
+
+<section class="pre-departure">
+  <h2>✅ 临走前待办</h2>
+  <div class="pre-departure-items">
+    <div class="item"><input type="checkbox" id="p1"><label for="p1">{{待办项}}</label></div>
+    <!-- 不要硬编码 .add-item-row，由 JS 动态注入 -->
+  </div>
+</section>
+
+<section class="info-card">
+  <h2>📞 紧急联系与出行提醒</h2>
+  <div class="info-row"><span class="info-label">报警电话</span><span class="info-value danger">110</span></div>
+  <div class="info-row"><span class="info-label">{{标签}}</span><span class="info-value">{{内容}}</span></div>
+</section>
+
+<!-- 底部操作栏：结构固定，照抄 -->
+<div class="action-bar">
+  <div class="action-left">
+    <div class="filter-group">
+      <button class="filter-btn active" data-filter="all" onclick="setFilter('all')">全部<span class="count" id="count-all"></span></button>
+      <button class="filter-btn" data-filter="packed" onclick="setFilter('packed')">已打包<span class="count" id="count-packed"></span></button>
+      <button class="filter-btn" data-filter="unpacked" onclick="setFilter('unpacked')">待打包<span class="count" id="count-unpacked"></span></button>
+    </div>
+    <button class="btn btn-secondary" onclick="resetProgress()">↺ 重置进度</button>
+  </div>
+  <div class="action-right">
+    <button class="btn btn-secondary" onclick="window.print()">🖨 打印</button>
+    <button class="btn btn-secondary" onclick="exportAsImage()">📷 保存为图片</button>
+    <button class="btn btn-secondary" onclick="copyAsText()">📋 复制文本</button>
+  </div>
+</div>
