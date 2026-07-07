@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>行李清单 - {{TRIP_TITLE}}</title>
+<style>
+  :root {
+    --primary: #FFE600;
+    --primary-light: #FFF9DB;
+    --primary-text: #0F0F0F;
+    --success: #FFE600;
+    --success-light: #FFF9DB;
+    --warning: #F59E0B;
+    --warning-light: #FEF3C7;
+    --danger: #EF4444;
+    --text: #0F0F0F;
+    --text-secondary: #7E7E7E;
+    --bg: #F4F4F4;
+    --card-bg: #FFFFFF;
+    --border: #EAEAEA;
+    --radius: 22px;
+    --shadow: 0 2px 8px rgba(0,0,0,0.04);
+    --font: 'Plus Jakarta Sans', 'SF Pro Display', -apple-system, 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 16px;
+  }
+
+  .container { max-width: 1200px; margin: 0 auto; }
+
+  .header {
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 24px;
+    margin-bottom: 20px;
+    border: 1px solid var(--border);
+  }
+
+  .header h1 {
+    font-size: 24px;
+    font-weight: 800;
+    margin-bottom: 8px;
+    color: var(--text);
+    letter-spacing: -0.5px;
+  }
+
+  .trip-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .trip-summary .tag {
+    background: #F0F0F0;
+    color: #555555;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  /* 近似日期模式提示横幅：仅当 approximate=true 时渲染于 header 内 */
+  .approx-notice {
+    background: #FEF3C7;
+    color: #B45309;
+    border-left: 3px solid #F59E0B;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 1.5;
+    font-weight: 500;
+  }
+  .approx-notice .approx-icon { margin-right: 4px; }
+
+  /* 天数近似模式提示横幅：仅当 approximate_days=true 时渲染于 header 内（可与 .approx-notice 同时出现） */
+  .approx-days-notice {
+    background: #FEF3C7;
+    color: #B45309;
+    border-left: 3px solid #EA580C;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+    font-weight: 500;
+  }
+  .approx-days-notice .approx-icon { margin-right: 4px; }
+
+  /* 衣物条目"按 N 天估算"小字提示：仅当 approximate_days=true 时附加在数量后 */
+  .item-approx-hint {
+    color: #B45309;
+    font-size: 11px;
+    margin-left: 4px;
+    font-weight: 400;
+  }
+
+  .progress-section {
+    background: var(--card-bg);
+    border-radius: 14px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    transition: box-shadow 0.3s;
+    margin-bottom: 20px;
+  }
+
+  .progress-section strong {
+    font-size: 11pt;
+    font-weight: 700;
+  }
+
+  .progress-bar {
+    height: 8px;
+    background: #E0E0E0;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: var(--primary);
+    border-radius: 4px;
+    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .progress-text {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-top: 6px;
+    font-weight: 500;
+  }
+
+  .categories-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  .category-card {
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+
+  .category-header {
+    background: var(--primary);
+    color: var(--primary-text);
+    padding: 14px 18px;
+    font-size: 15px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    letter-spacing: -0.2px;
+  }
+
+  .category-header .icon { font-size: 18px; }
+  .category-items { padding: 8px 0; }
+
+  .item {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
+  }
+
+  .item:hover { background: var(--bg); }
+
+  .item input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin-right: 12px;
+    cursor: pointer;
+    accent-color: var(--primary);
+    border-radius: 4px;
+  }
+
+  .item label {
+    flex: 1;
+    min-width: 0;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.2s;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .item.checked label {
+    text-decoration: line-through;
+    color: var(--text-secondary);
+    font-weight: 400;
+  }
+
+  .item .note {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-left: 8px;
+    background: var(--bg);
+    padding: 2px 8px;
+    border-radius: 100px;
+    font-weight: 500;
+    flex-shrink: 0;
+    max-width: 45%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .item:hover .note {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    max-width: none;
+    max-height: 96px;
+    overflow-y: auto;
+    border-radius: 8px;
+  }
+
+  .pre-departure {
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 20px;
+    margin-bottom: 20px;
+    border: 1px solid var(--border);
+  }
+
+  .pre-departure h2 {
+    font-size: 16px;
+    font-weight: 800;
+    margin-bottom: 16px;
+    letter-spacing: -0.2px;
+  }
+
+  .pre-departure-items {
+    padding: 8px 0;
+  }
+
+  .daily-outfit {
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 20px;
+    margin-bottom: 20px;
+    border: 1px solid var(--border);
+  }
+
+  .daily-outfit h2 {
+    font-size: 16px;
+    font-weight: 800;
+    margin-bottom: 16px;
+    letter-spacing: -0.2px;
+  }
+
+  .daily-outfit h3 {
+    font-size: 13px;
+    font-weight: 600;
+    margin: 14px 0 8px;
+    color: #555;
+  }
+
+  .day-row {
+    display: flex;
+    align-items: baseline;
+    padding: 12px 16px;
+    background: var(--bg);
+    border-radius: 14px;
+    margin-bottom: 8px;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .day-row:last-child { margin-bottom: 0; }
+
+  .day-label {
+    font-weight: 800;
+    font-size: 14px;
+    white-space: nowrap;
+    min-width: 42px;
+  }
+
+  .day-weather {
+    font-size: 13px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    font-weight: 500;
+  }
+
+  .day-outfit {
+    font-size: 13px;
+    flex: 1;
+    font-weight: 500;
+    line-height: 1.5;
+    min-width: 200px;
+  }
+
+  /* Info Card (紧急联系/提醒区块) */
+  .info-card {
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 20px;
+    margin-bottom: 20px;
+    border: 1px solid var(--border);
+  }
+
+  .info-card h2 {
+    font-size: 16px;
+    font-weight: 800;
+    margin-bottom: 12px;
+    letter-spacing: -0.2px;
+  }
+
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+  }
+
+  .info-row:last-child { border-bottom: none; }
+  .info-label { font-weight: 600; color: var(--text); }
+  .info-value { font-weight: 700; }
+  .info-value.urgent { color: var(--danger); }
+
+  .action-bar {
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 16px;
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    position: sticky;
+    bottom: 16px;
+    border: 1px solid var(--border);
+  }
+
+  .action-left, .action-right {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .filter-group {
+    display: flex;
+    gap: 0;
+    background: var(--bg);
+    border-radius: 100px;
+    padding: 3px;
+  }
+
+  .filter-btn {
+    padding: 8px 18px;
+    border: none;
+    background: transparent;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 100px;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    white-space: nowrap;
+    font-family: var(--font);
+  }
+
+  .filter-btn:hover {
+    color: var(--text);
+  }
+
+  .filter-btn.active {
+    background: var(--primary);
+    color: var(--primary-text);
+    box-shadow: 0 2px 8px rgba(255, 230, 0, 0.4);
+  }
+
+  .filter-btn .count {
+    font-size: 11px;
+    margin-left: 4px;
+    opacity: 0.7;
+    font-weight: 700;
+  }
+
+  .action-divider {
+    width: 1px;
+    height: 28px;
+    background: var(--border);
+    margin: 0 4px;
+  }
+
+  .item.hidden-by-filter { display: none; }
+  .category-card.hidden-by-filter { display: none; }
+
+  .add-item-row {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px 12px;
+    gap: 8px;
+    border-top: 1px dashed var(--border);
+    margin-top: 4px;
+  }
+
+  .add-item-row input[type="text"] {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    font-size: 13px;
+    font-family: var(--font);
+    background: var(--bg);
+    outline: none;
+    transition: border-color 0.2s;
+    min-width: 0;
+  }
+
+  .add-item-row input[type="text"]:focus {
+    border-color: var(--primary);
+    background: #fff;
+  }
+
+  .add-item-row input[type="text"]::placeholder {
+    color: #bbb;
+  }
+
+  .add-btn {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: var(--primary);
+    color: var(--primary-text);
+    border-radius: 50%;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    font-family: var(--font);
+    line-height: 1;
+  }
+
+  .add-btn:hover {
+    background: #E6CF00;
+    transform: scale(1.1);
+  }
+
+  .item .delete-btn {
+    display: none;
+    width: 20px;
+    height: 20px;
+    border: none;
+    background: transparent;
+    color: #ccc;
+    font-size: 16px;
+    cursor: pointer;
+    border-radius: 50%;
+    margin-left: 4px;
+    padding: 0;
+    line-height: 1;
+    flex-shrink: 0;
+    font-family: var(--font);
+    transition: all 0.15s;
+  }
+
+  .item .delete-btn:hover {
+    color: var(--danger);
+    background: #fee2e2;
+  }
+
+  .item:hover .delete-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* 分类卡片级删除按钮：hover category-header 出现 × ，点击删除整卡 */
+  .category-header .cat-delete-btn {
+    display: none;
+    width: 24px;
+    height: 24px;
+    border: none;
+    background: transparent;
+    color: rgba(0, 0, 0, 0.35);
+    font-size: 20px;
+    cursor: pointer;
+    border-radius: 50%;
+    padding: 0;
+    line-height: 1;
+    flex-shrink: 0;
+    margin-left: auto;
+    font-family: var(--font);
+    transition: all 0.15s;
+  }
+
+  .category-header:hover .cat-delete-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .category-header .cat-delete-btn:hover {
+    color: var(--danger);
+    background: rgba(239, 68, 68, 0.15);
+  }
+
+  .btn {
+    padding: 10px 24px;
+    border: none;
+    border-radius: 100px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font);
+  }
+
+  .btn-primary { background: var(--primary); color: var(--primary-text); box-shadow: 0 2px 8px rgba(255, 230, 0, 0.3); }
+  .btn-primary:hover { background: #E6CF00; transform: translateY(-1px); }
+  .btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--border); transform: translateY(-1px); }
+
+  @media (max-width: 768px) {
+    body { padding: 8px; }
+    .header { padding: 16px; }
+    .header h1 { font-size: 20px; }
+    .progress-section { padding: 10px 12px; top: 0; margin-bottom: 16px; }
+    .categories-grid { grid-template-columns: 1fr; }
+    .action-bar { padding: 12px; gap: 8px; }
+    .btn { padding: 12px 20px; font-size: 13px; }
+    .filter-btn { padding: 10px 14px; font-size: 12px; }
+    .action-divider { display: none; }
+    .action-bar { flex-direction: column; align-items: stretch; }
+    .action-left, .action-right { justify-content: center; }
+    .filter-group { justify-content: center; }
+    .action-bar .btn { justify-content: center; }
+    .day-row { flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px 14px; }
+  }
+
+  @media print {
+    body { background: white; padding: 0; font-size: 12px; }
+    .action-bar, .progress-section { display: none; }
+    .cat-delete-btn { display: none !important; }
+    .header, .category-card, .subtraction-section, .daily-outfit, .info-card {
+      box-shadow: none;
+      break-inside: avoid;
+    }
+    .categories-grid { grid-template-columns: repeat(2, 1fr); }
+    .item input[type="checkbox"] {
+      appearance: none;
+      border: 1.5px solid #333;
+      width: 14px;
+      height: 14px;
+    }
+    .item.checked input[type="checkbox"]::after {
+      content: "✓";
+      font-size: 12px;
+      position: relative;
+      top: -2px;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="container">
